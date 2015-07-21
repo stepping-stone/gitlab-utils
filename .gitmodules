@@ -1,0 +1,3 @@
+[submodule "share/stepping-stone/lib/bash"]
+	path = share/stepping-stone/lib/bash
+	url = https://github.com/stepping-stone/bash-libs.git
