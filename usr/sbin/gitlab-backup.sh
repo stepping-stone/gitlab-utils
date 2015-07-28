@@ -156,7 +156,7 @@ EOF
 function printVersion ()
 {
     cat << EOF
-$( ${BASENAME_CMD} "$0" ) ${_VERSION}
+$( ${BASENAME_CMD} "$0" ) (gitlab-utils) ${_VERSION}
 
 Copyright (C) 2015 stepping stone GmbH
 License AGPLv3: GNU Affero General Public License version 3
