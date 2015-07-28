@@ -33,7 +33,7 @@
 # gitlab-backup.sh <OPTIONS-AND-ARGUMENTS>
 #
 # Example:
-# gitlab-backup.sh <EXAMPLE-OPTIONS-AND-ARGUMENTS>
+# gitlab-backup.sh
 ################################################################################
 
 # Root directory of the GitLab utils
@@ -44,7 +44,7 @@ LIB_DIR="${ROOT_DIR}/usr/share/stepping-stone/lib/bash"
 
 # Required external commands
 GETENT_CMD="/usr/bin/getent"
-REDIS_CLI_CMD="/usr/bin/redis-cli"
+SU_CMD="/bin/su"
 
 source "${LIB_DIR}/input-output.lib.sh"
 source "${LIB_DIR}/config.lib.sh"
@@ -63,6 +63,9 @@ shopt -s nullglob
 ##
 # Private variables, do not overwrite them
 #
+# Script Version
+_VERSION="1.0.0"
+
 # Default configuration file
 _DEFAULT_CONFIG_FILE="${ROOT_DIR}/etc/gitlab-backup.conf"
 
@@ -75,11 +78,11 @@ function processArguments ()
     # Define all options as unset by default
     declare -A optionFlags
 
-    for optionName in a c d h i; do
+    for optionName in c d h v; do
         optionFlags[${optionName}]=false
     done
 
-    while getopts ":c:dhi:" option; do
+    while getopts ":c:dhv" option; do
         debug "Processing option '${option}'"
 
         case $option in
@@ -95,6 +98,11 @@ function processArguments ()
 
             h )
                 printUsage
+                exit 0
+            ;;
+
+            v )
+                printVersion
                 exit 0
             ;;
 
@@ -138,6 +146,21 @@ Usage: $( ${BASENAME_CMD} "$0" ) [OPTION]...
 
     -d              Enable debug messages
     -h              Display this help and exit
+    -v              Display the version and exit
+EOF
+}
+
+# Displays the version of this script
+#
+# printVersion
+function printVersion ()
+{
+    cat << EOF
+$( ${BASENAME_CMD} "$0" ) (gitlab-utils) ${_VERSION}
+
+Copyright (C) 2015 stepping stone GmbH
+License AGPLv3: GNU Affero General Public License version 3
+                https://www.gnu.org/licenses/agpl-3.0.html
 EOF
 }
 
@@ -149,53 +172,50 @@ function loadAndCheckConfig ()
 {
     configLoadConfig "$1"
 
-    local configParameters='gitLabUtilsMaintenanceModeActive
-                            gitLabUtilsMaintenanceModeEnableScript
-                            gitLabUtilsMaintenanceModeDisableScript
-                            gitLabUtilsMaintenanceModeUser
-                            gitLabUtilsServiceShutdown
-                            gitLabUtilsServiceShutdownStopScript
-                            gitLabUtilsServiceShutdownStartScript
-                            gitLabUtilsServiceShutdownUser
-                            gitLabUtilsRdbmsDump
-                            gitLabUtilsRdbmsDumpScript
-                            gitLabUtilsRdbmsDumpUser
-                            gitLabUtilsFileBackup
-                            gitLabUtilsFileBackupScript
-                            gitLabUtilsFileBackupUser
-                            gitLabUtilsNoSqlDump
-                            gitLabUtilsNoSqlDumpScript
-                            gitLabUtilsNoSqlDumpUser
+    # Get number of defined tasks (array values)
+    local numberOfDefinedTasks=${#gitLabBackupTaskDescription[@]}
+    debug "Defined tasks: ${numberOfDefinedTasks}"
+
+
+    local configParameters='gitLabBackupTaskActive
+                            gitLabBackupTaskDescription
+                            gitLabBackupTaskCmd
+                            gitLabBackupTaskUser
                            '
 
     local parameter=''
     for parameter in ${configParameters}; do
         configDieIfValueNotPresent "$parameter"
+
+        local numberOfValues="$( eval echo \$\{\#${parameter}\[\@\]\} )"
+
+        if [ ${numberOfValues} -ne ${numberOfDefinedTasks} ]; then
+            error "Values doesn't match with defined number of tasks"
+            error "${numberOfDefinedTasks} tasks vs. ${numberOfValues} values."
+            die "Fix your task configuration for ${parameter}"
+        fi
     done
 
-    local script=''
-    for script in ${gitLabUtilsMaintenanceModeEnableScript} \
-                  ${gitLabUtilsMaintenanceModeDisableScript} \
-                  ${gitLabUtilsServiceShutdownStopScript} \
-                  ${gitLabUtilsServiceShutdownStartScript} \
-                  ${gitLabUtilsRdbmsDumpScript} \
-                  ${gitLabUtilsFileBackupScript} \
-                  ${gitLabUtilsNoSqlDumpScript}
-    do
-        # Passing ${script} unquoted was intentional to split of the possible
-        # script arguments.
-        validationDieIfCommandMissing ${script}
-    done
+    local i
+    for i in ${!gitLabBackupTaskDescription[*]}; do
+        if [ "${gitLabBackupTaskActive[$i]}" != true ]; then
+            debug "Skipping task ${i} ($gitLabBackupTaskDescription)"
+            continue
+        fi
 
-    local user
-    for user in ${gitLabUtilsMaintenanceModeUser} \
-                ${gitLabUtilsServiceShutdownUser} \
-                ${gitLabUtilsRdbmsDumpUser} \
-                ${gitLabUtilsFileBackupUser} \
-                ${gitLabUtilsNoSqlDumpUser};
-    do
-        if ! ${GETENT_CMD} passwd "${user}" > /dev/null; then
-            die "User '$user' does not exist"
+        configDieIfValueNotPresent "gitLabBackupTaskDescription[$i]"
+
+        configDieIfValueNotPresent "gitLabBackupTaskCmd[$i]"
+
+        # Passing ${gitLabBackupTaskCmd[$i]} unquoted is intentional to split
+        # of the possible script arguments.
+        validationDieIfCommandMissing ${gitLabBackupTaskCmd[$i]}
+
+        configDieIfValueNotPresent "gitLabBackupTaskUser[$i]"
+
+        if ! ${GETENT_CMD} passwd "${gitLabBackupTaskUser[$i]}" > /dev/null
+        then
+            die "User '${gitLabBackupTaskUser[$i]}' does not exist"
         fi
     done
 }
@@ -210,10 +230,22 @@ function checkEnvironment ()
 {
     local cmd=''
     for cmd in ${GETENT_CMD} \
-               ${REDIS_CMD}
+               ${SU_CMD}
     do
         validationDieIfCommandMissing "${cmd}"
     done
+}
+
+# Checks if the effective user ID is 0 (root)
+#
+# Terminates with an error message if not run as root
+#
+# checkRoot
+function checkRoot ()
+{
+    if [[ $EUID -ne 0 ]]; then
+        die "This script must be run as root"
+    fi
 }
 
 
@@ -226,19 +258,65 @@ function checkEnvironment ()
 function main ()
 {
     processArguments $@
+    checkRoot
     loadAndCheckConfig "${configFile}"
     checkEnvironment
 
     # Uppercase the first letter of the action name and call the function
-    action$(action^)
+    action${action^}
 
     return $?
 }
 
 function actionBackup ()
 {
-    return true
+
+    info "Starting GitLab backup"
+
+    local errorCounter=0
+
+    local i
+    for i in ${!gitLabBackupTaskDescription[*]}; do
+        if [ "${gitLabBackupTaskActive[$i]}" != true ]; then
+            info "Skipping task ${i} - '${gitLabBackupTaskDescription[$i]}')"
+            continue
+        fi
+
+        info "Run task ${i} - '${gitLabBackupTaskDescription[$i]}'"
+
+        local message="Finished task '${gitLabBackupTaskDescription[$i]}'"
+        if executeScript "${gitLabBackupTaskCmd[$i]}" \
+                         "${gitLabBackupTaskUser[$i]}"
+        then
+            info "${message} successfully"
+        else
+            error "${message} with errors"
+            ((errorCounter++))
+        fi
+    done
+
+    local message="GitLab backup finished"
+    test ${errorCounter} -eq 0 || die "${message} with ${errorCounter} errors"
+
+    info "${message} successfully"
 }
 
+function executeScript ()
+{
+    local script="$1"
+    local user="$2"
 
-main
+    info "Executing Script '$1' as user '$user'"
+
+    local exitCode
+    ${SU_CMD} --command "$script" --shell "/bin/bash" "$user" 2> >(error -)
+    exitCode=$?
+
+    if [ $exitCode -ne 0 ]; then
+        error "Script terminated with exit code: $exitCode"
+    fi
+
+    return $exitCode
+}
+
+main $@

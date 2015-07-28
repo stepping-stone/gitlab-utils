@@ -32,6 +32,11 @@
 #  - sst.maintenance.status[unicorn] = 0
 #  - sst.maintenance.status[sidekiq] = 0
 #
+# The scripts optionally sleeps for a specific amount of seconds (passed as the
+# first argument) before it disables the maintenance mode.
+# This ensures, that the Zabbix agent has sent new data before the maintenance
+# mode will be be disabled.
+#
 # Usage:
 # zabbix-maintenance-disable.sh
 #
@@ -45,13 +50,18 @@ if ! test -x "${ZABBIX_SENDER_CMD}"; then
     exit 1
 fi
 
+if [[ $1 =~ ^[0-9]+$ ]]; then
+    echo "Ensure that the Zabbix agent has sent new data, by waiting for"
+    echo "$1 seconds before disabling the maintenance mode"
+    sleep $1
+fi
 
 ${ZABBIX_SENDER_CMD} --config /etc/zabbix/zabbix_agentd.conf \
                      --key 'sst.maintenance.status[unicorn]' \
-                     --value 1 \
+                     --value 0 \
                      --verbose
 
 ${ZABBIX_SENDER_CMD} --config /etc/zabbix/zabbix_agentd.conf \
                      --key 'sst.maintenance.status[sidekiq]' \
-                     --value 1 \
+                     --value 0 \
                      --verbose
