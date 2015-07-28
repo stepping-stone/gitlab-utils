@@ -58,10 +58,10 @@ fi
 
 ${ZABBIX_SENDER_CMD} --config /etc/zabbix/zabbix_agentd.conf \
                      --key 'sst.maintenance.status[unicorn]' \
-                     --value 1 \
+                     --value 0 \
                      --verbose
 
 ${ZABBIX_SENDER_CMD} --config /etc/zabbix/zabbix_agentd.conf \
                      --key 'sst.maintenance.status[sidekiq]' \
-                     --value 1 \
+                     --value 0 \
                      --verbose
