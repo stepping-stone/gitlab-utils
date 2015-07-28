@@ -236,6 +236,18 @@ function checkEnvironment ()
     done
 }
 
+# Checks if the effective user ID is 0 (root)
+#
+# Terminates with an error message if not run as root
+#
+# checkRoot
+function checkRoot ()
+{
+    if [[ $EUID -ne 0 ]]; then
+        die "This script must be run as root"
+    fi
+}
+
 
 # The main function of this script
 #
@@ -246,6 +258,7 @@ function checkEnvironment ()
 function main ()
 {
     processArguments $@
+    checkRoot
     loadAndCheckConfig "${configFile}"
     checkEnvironment
 
