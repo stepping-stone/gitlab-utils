@@ -51,17 +51,37 @@ if ! test -S "${REDIS_SOCKET}"; then
     exit 1
 fi
 
-redisCmd="${REDIS_CLI_CMD} -s '${REDIS_SOCKET}' --raw"
+redisCmd="${REDIS_CLI_CMD} -s ${REDIS_SOCKET} --raw"
 
 # Get the UNIX TIME of the last DB save executed with success
-originalLastSave="$(${redisCmd} LASTSAVE))" 
+originalLastSave="$( ${redisCmd} LASTSAVE )" 
+
+if [ $? -ne 0 ]; then
+    echo "Redis LASTSAVE command failed" >&2
+    exit 2
+fi
+
 lastSave=0
 
 # Issue a background DB save
 ${redisCmd} BGSAVE
 
+if [ $? -ne 0 ]; then
+    echo "Redis BGSAVE command failed" >&2
+    exit 2
+fi
+
 # Wait until the last DB save timestamp has changed
 until [ ${lastSave} -gt ${originalLastSave} ]; do
-    lastSave="$(${redisCmd} LASTSAVE))"
+    lastSave="$( ${redisCmd} LASTSAVE )"
+
+    if [ $? -ne 0 ]; then
+        echo "Redis LASTSAVE command failed" >&2
+        exit 2
+    fi
+
+    #echo "originalLastSave: ${originalLastSave}"
+    #echo "lastSave:         $lastSave"
+    #echo ""
     sleep 1
 done
