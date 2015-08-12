@@ -64,7 +64,7 @@ shopt -s nullglob
 # Private variables, do not overwrite them
 #
 # Script Version
-_VERSION="1.0.0"
+_VERSION="1.0.1"
 
 # Default configuration file
 _DEFAULT_CONFIG_FILE="${ROOT_DIR}/etc/gitlab-backup.conf"
@@ -309,7 +309,11 @@ function executeScript ()
     info "Executing Script '$1' as user '$user'"
 
     local exitCode
-    ${SU_CMD} --command "$script" --shell "/bin/bash" "$user" 2> >(error -)
+    ${SU_CMD} --command "$script" \
+              --login \
+              --shell "/bin/bash" \
+              "$user" 2> >(error -)
+
     exitCode=$?
 
     if [ $exitCode -ne 0 ]; then
