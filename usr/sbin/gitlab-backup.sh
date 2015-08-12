@@ -64,7 +64,7 @@ shopt -s nullglob
 # Private variables, do not overwrite them
 #
 # Script Version
-_VERSION="1.0.0"
+_VERSION="1.0.1"
 
 # Default configuration file
 _DEFAULT_CONFIG_FILE="${ROOT_DIR}/etc/gitlab-backup.conf"
