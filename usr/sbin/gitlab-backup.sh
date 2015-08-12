@@ -309,7 +309,11 @@ function executeScript ()
     info "Executing Script '$1' as user '$user'"
 
     local exitCode
-    ${SU_CMD} --command "$script" --shell "/bin/bash" "$user" 2> >(error -)
+    ${SU_CMD} --command "$script" \
+              --login \
+              --shell "/bin/bash" \
+              "$user" 2> >(error -)
+
     exitCode=$?
 
     if [ $exitCode -ne 0 ]; then
